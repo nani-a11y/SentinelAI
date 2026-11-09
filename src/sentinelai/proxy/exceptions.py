@@ -66,3 +66,21 @@ class UpstreamProviderError(LLMProxyError):
             error_type="upstream_error",
             code=f"provider_error_{status_code}",
         )
+
+
+class PromptSecurityBlockedError(LLMProxyError):
+    """Raised when incoming prompt violates security policies (injection, jailbreak, exfiltration)."""
+
+    def __init__(
+        self,
+        message: str = "Request blocked by SentinelAI Security Engine: detected prompt injection or security violation.",
+        status_code: int = status.HTTP_403_FORBIDDEN,
+        details: Any = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            error_type="security_violation",
+            code="prompt_security_blocked",
+            details=details,
+        )

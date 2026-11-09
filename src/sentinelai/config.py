@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_seconds: float = 60.0
 
+    # Input Security Engine Configuration
+    security_enabled: bool = True
+    security_block_threshold: float = 0.60
+    security_block_status_code: int = 403
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
