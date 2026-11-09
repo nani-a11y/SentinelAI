@@ -23,18 +23,23 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(SentinelAIError)
     async def sentinelai_error_handler(request: Request, exc: SentinelAIError) -> JSONResponse:
+        error_type = getattr(exc, "error_type", "api_error")
+        error_code = getattr(exc, "code", exc.__class__.__name__)
         logger.warning(
-            "SentinelAI domain error: %s (path: %s)",
+            "SentinelAI domain error: %s (path: %s, code: %s)",
             exc.message,
             request.url.path,
-            extra={"status_code": exc.status_code, "path": request.url.path},
+            error_code,
+            extra={"status_code": exc.status_code, "path": request.url.path, "code": error_code},
         )
         return JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": {
-                    "code": exc.__class__.__name__,
                     "message": exc.message,
+                    "type": error_type,
+                    "param": None,
+                    "code": error_code,
                     "details": exc.details,
                 }
             },

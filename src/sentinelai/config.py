@@ -19,6 +19,19 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_timeout_seconds: float = 3.0
 
+    # LLM Reverse Proxy & Provider Configuration
+    default_llm_provider: str = "ollama"
+    llm_default_timeout_seconds: float = 60.0
+
+    # Ollama Provider
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_timeout_seconds: float = 60.0
+
+    # Gemini Provider (credentials loaded exclusively from environment)
+    gemini_api_key: str | None = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_timeout_seconds: float = 60.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

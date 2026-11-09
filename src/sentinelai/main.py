@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from sentinelai.api.routes.chat import router as chat_router
 from sentinelai.api.routes.health import router as health_router
 from sentinelai.config import get_settings
 from sentinelai.database import close_db_engine
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
 
     # Routes
     app.include_router(health_router)
+    app.include_router(chat_router)
 
     @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:
