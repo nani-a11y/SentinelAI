@@ -6,6 +6,11 @@ from sentinelai.security.context_scanner import (
     ContextScanResult,
     ContextSecurityScanner,
 )
+from sentinelai.security.output_guard import (
+    OutputGuard,
+    OutputSecurityAssessment,
+    get_output_guard,
+)
 from sentinelai.security.pii import PIIEntity, PIIScanner
 from sentinelai.security.secrets import SecretMatch, SecretScanner
 from sentinelai.security.tools import (
@@ -115,6 +120,23 @@ async def scan_secrets(
         matches = scanner.scan(req.text)
         redacted = req.text
     return ScanSecretsResponse(secrets=matches, redacted_text=redacted)
+
+
+class ScanOutputRequest(BaseModel):
+    content: str
+
+
+@router.post(
+    "/security/scan-output",
+    response_model=OutputSecurityAssessment,
+    summary="Scan and Sanitize Model Output",
+    description="Inspect LLM generated text for secrets, PII, prompt leakage, and dangerous payloads.",
+)
+async def scan_output(
+    req: ScanOutputRequest,
+    guard: OutputGuard = Depends(get_output_guard),
+) -> OutputSecurityAssessment:
+    return guard.inspect_and_sanitize(req.content)
 
 
 @router.post(

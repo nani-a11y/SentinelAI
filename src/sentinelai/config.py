@@ -56,6 +56,13 @@ class Settings(BaseSettings):
         "delete_database",
     ]
 
+    # Phase 5: Output Protection Configuration
+    output_protection_enabled: bool = True
+    output_redact_pii: bool = True
+    output_redact_secrets: bool = True
+    output_block_critical_leaks: bool = True
+    output_detect_prompt_leakage: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

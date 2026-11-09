@@ -16,6 +16,11 @@ from sentinelai.schemas.chat import (
     ChatCompletionResponse,
 )
 from sentinelai.security.engine import SecurityEngine, get_security_engine
+from sentinelai.security.output_guard import (
+    OutputGuard,
+    StreamingOutputSanitizer,
+    get_output_guard,
+)
 from sentinelai.security.pii import PIIScanner
 from sentinelai.security.secrets import SecretScanner
 from sentinelai.security.tools import ToolAuthorizer, get_tool_authorizer
@@ -26,12 +31,31 @@ router = APIRouter(prefix="/v1", tags=["Chat Completions"])
 
 
 async def sse_event_stream(
-    router_instance: LLMRouter, request: ChatCompletionRequest
+    router_instance: LLMRouter,
+    request: ChatCompletionRequest,
+    output_guard: OutputGuard,
 ) -> AsyncGenerator[str, None]:
-    """Stream formatted Server-Sent Events for OpenAI compatibility."""
+    """Stream formatted Server-Sent Events with real-time output sanitization."""
+    sanitizer = StreamingOutputSanitizer(output_guard=output_guard)
+    last_chunk = None
+
     try:
         async for chunk in router_instance.stream(request):
-            yield f"data: {chunk.model_dump_json()}\n\n"
+            delta = chunk.choices[0].delta if chunk.choices else None
+            is_finish = bool(chunk.choices and chunk.choices[0].finish_reason)
+            delta_content = delta.content if delta else None
+
+            sanitized_text = sanitizer.process_chunk(delta_content, is_last=is_finish)
+
+            if delta is not None:
+                if sanitized_text is not None:
+                    delta.content = sanitized_text
+                if sanitized_text is not None or is_finish:
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+
+            if sanitizer.blocked:
+                break
+
         yield "data: [DONE]\n\n"
     except Exception as exc:
         logger.exception("Error while streaming response: %s", str(exc))
@@ -75,6 +99,7 @@ async def create_chat_completion(
     secret_scanner: SecretScanner = Depends(get_chat_secret_scanner),
     tool_authorizer: ToolAuthorizer = Depends(get_tool_authorizer),
     pii_scanner: PIIScanner = Depends(get_chat_pii_scanner),
+    output_guard: OutputGuard = Depends(get_output_guard),
 ) -> Any:
     """Handle chat completion request in standard JSON or SSE streaming format."""
     # 1. Inspect request through Input Security Engine before provider routing
@@ -86,7 +111,7 @@ async def create_chat_completion(
             details=assessment.to_error_details(),
         )
 
-    # 2. Inspect for unmasked credentials & secret leakage
+    # 2. Inspect for unmasked credentials & secret leakage in prompt
     if security_engine.settings.security_block_on_secrets:
         for msg in request.messages:
             if msg.role.lower() == "user":
@@ -124,7 +149,7 @@ async def create_chat_completion(
                         },
                     )
 
-    # 4. Optional PII Redaction
+    # 4. Optional Input PII Redaction
     if security_engine.settings.security_redact_pii:
         for msg in request.messages:
             if isinstance(msg.content, str):
@@ -134,7 +159,7 @@ async def create_chat_completion(
     # 5. Forward to target provider (streaming or non-streaming)
     if request.stream:
         return StreamingResponse(
-            sse_event_stream(router_instance, request),
+            sse_event_stream(router_instance, request, output_guard),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -144,4 +169,11 @@ async def create_chat_completion(
         )
 
     response = await router_instance.generate(request)
+
+    # 6. Output Security Inspection & Redaction
+    if response.choices and response.choices[0].message:
+        raw_output = response.choices[0].message.content
+        out_assessment = output_guard.inspect_and_sanitize(raw_output)
+        response.choices[0].message.content = out_assessment.sanitized_text
+
     return response
