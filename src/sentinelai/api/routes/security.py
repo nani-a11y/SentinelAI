@@ -6,6 +6,11 @@ from sentinelai.security.context_scanner import (
     ContextScanResult,
     ContextSecurityScanner,
 )
+from sentinelai.security.health_safety import (
+    HealthSafetyAssessment,
+    HealthSafetyEngine,
+    get_health_safety_engine,
+)
 from sentinelai.security.output_guard import (
     OutputGuard,
     OutputSecurityAssessment,
@@ -124,6 +129,34 @@ async def scan_secrets(
 
 class ScanOutputRequest(BaseModel):
     content: str
+
+
+class ScanHealthRequest(BaseModel):
+    text: str
+    mode: str = "input"  # "input" or "output"
+
+
+class ScanHealthResponse(BaseModel):
+    assessment: HealthSafetyAssessment
+    sanitized_text: str
+
+
+@router.post(
+    "/security/scan-health",
+    response_model=ScanHealthResponse,
+    summary="Health & Medical Safety Scan",
+    description="Inspect text for emergencies, medication hazards, overdose language, or diagnostic overreach.",
+)
+async def scan_health(
+    req: ScanHealthRequest,
+    engine: HealthSafetyEngine = Depends(get_health_safety_engine),
+) -> ScanHealthResponse:
+    if req.mode == "output":
+        sanitized, assessment = engine.evaluate_output(req.text)
+    else:
+        assessment = engine.evaluate_input(req.text)
+        sanitized = req.text
+    return ScanHealthResponse(assessment=assessment, sanitized_text=sanitized)
 
 
 @router.post(

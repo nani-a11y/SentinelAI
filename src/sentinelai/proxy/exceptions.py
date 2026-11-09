@@ -120,3 +120,21 @@ class UnauthorizedToolError(LLMProxyError):
             code="unauthorized_tool_call",
             details=details,
         )
+
+
+class HealthSafetyBlockedError(LLMProxyError):
+    """Raised when request poses critical health, medical overdose, or life-safety hazards."""
+
+    def __init__(
+        self,
+        message: str = "Request blocked due to health or life-safety policy violation.",
+        status_code: int = status.HTTP_400_BAD_REQUEST,
+        details: Any = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            error_type="health_safety_violation",
+            code="health_safety_blocked",
+            details=details,
+        )

@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from pydantic import BaseModel, Field
 
 from sentinelai.config import Settings, get_settings
@@ -172,8 +172,9 @@ class OutputGuard:
 class StreamingOutputSanitizer:
     """Stateful sanitizer for streaming SSE response chunks."""
 
-    def __init__(self, output_guard: OutputGuard):
+    def __init__(self, output_guard: OutputGuard, health_safety_engine: Any = None):
         self.output_guard = output_guard
+        self.health_safety_engine = health_safety_engine
         self.accumulated = ""
         self.blocked = False
 
@@ -191,13 +192,28 @@ class StreamingOutputSanitizer:
             self.blocked = True
             return "\n[BLOCKED BY SENTINELAI: CRITICAL LEAK DETECTED]"
 
-        # 2. Sanitize current delta for PII and secrets
+        # 2. Check accumulated stream for unsafe medical treatment
+        if self.health_safety_engine:
+            _, h_assessment = self.health_safety_engine.evaluate_output(self.accumulated)
+            if h_assessment.is_blocked:
+                self.blocked = True
+                return "\n[BLOCKED BY SENTINELAI: Unsafe medical treatment instruction blocked]"
+
+        # 3. Sanitize current delta for PII and secrets
         delta_assessment = self.output_guard.inspect_and_sanitize(delta_text)
         if delta_assessment.is_blocked:
             self.blocked = True
             return "\n[BLOCKED BY SENTINELAI: CRITICAL LEAK DETECTED]"
 
-        return delta_assessment.sanitized_text
+        result = delta_assessment.sanitized_text
+        if is_last and self.health_safety_engine:
+            clean_res, _ = self.health_safety_engine.evaluate_output(self.accumulated)
+            if clean_res != self.accumulated and clean_res.endswith("\n\n---\n*MEDICAL DISCLAIMER: SentinelAI provides general informational content only, not personal medical advice, clinical diagnosis, or treatment. Always consult a qualified healthcare provider with any health questions.*"):
+                from sentinelai.security.health_safety import STANDARD_MEDICAL_DISCLAIMER
+                if STANDARD_MEDICAL_DISCLAIMER not in self.accumulated:
+                    result += STANDARD_MEDICAL_DISCLAIMER
+
+        return result
 
 
 _output_guard_instance: OutputGuard | None = None

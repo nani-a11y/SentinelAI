@@ -1,21 +1,32 @@
 from collections.abc import AsyncGenerator
+import json
 import logging
+import time
 from typing import Any
+import uuid
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from sentinelai.proxy.exceptions import (
+    HealthSafetyBlockedError,
     PromptSecurityBlockedError,
     SecretLeakDetectedError,
     UnauthorizedToolError,
 )
 from sentinelai.proxy.router import LLMRouter, get_router
 from sentinelai.schemas.chat import (
+    ChatChunkChoice,
+    ChatChunkDelta,
+    ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
 )
 from sentinelai.security.engine import SecurityEngine, get_security_engine
+from sentinelai.security.health_safety import (
+    HealthSafetyEngine,
+    get_health_safety_engine,
+)
 from sentinelai.security.output_guard import (
     OutputGuard,
     StreamingOutputSanitizer,
@@ -34,12 +45,31 @@ async def sse_event_stream(
     router_instance: LLMRouter,
     request: ChatCompletionRequest,
     output_guard: OutputGuard,
+    health_safety_engine: HealthSafetyEngine | None = None,
+    emergency_guidance: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream formatted Server-Sent Events with real-time output sanitization."""
-    sanitizer = StreamingOutputSanitizer(output_guard=output_guard)
-    last_chunk = None
+    sanitizer = StreamingOutputSanitizer(
+        output_guard=output_guard,
+        health_safety_engine=health_safety_engine,
+    )
 
     try:
+        if emergency_guidance:
+            init_chunk = ChatCompletionChunk(
+                id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                created=int(time.time()),
+                model=request.model,
+                choices=[
+                    ChatChunkChoice(
+                        index=0,
+                        delta=ChatChunkDelta(role="assistant", content=f"{emergency_guidance}\n\n"),
+                        finish_reason=None,
+                    )
+                ],
+            )
+            yield f"data: {init_chunk.model_dump_json()}\n\n"
+
         async for chunk in router_instance.stream(request):
             delta = chunk.choices[0].delta if chunk.choices else None
             is_finish = bool(chunk.choices and chunk.choices[0].finish_reason)
@@ -68,7 +98,6 @@ async def sse_event_stream(
                 "code": "streaming_error",
             }
         }
-        import json
         yield f"data: {json.dumps(error_payload)}\n\n"
         yield "data: [DONE]\n\n"
 
@@ -100,6 +129,7 @@ async def create_chat_completion(
     tool_authorizer: ToolAuthorizer = Depends(get_tool_authorizer),
     pii_scanner: PIIScanner = Depends(get_chat_pii_scanner),
     output_guard: OutputGuard = Depends(get_output_guard),
+    health_safety_engine: HealthSafetyEngine = Depends(get_health_safety_engine),
 ) -> Any:
     """Handle chat completion request in standard JSON or SSE streaming format."""
     # 1. Inspect request through Input Security Engine before provider routing
@@ -111,7 +141,25 @@ async def create_chat_completion(
             details=assessment.to_error_details(),
         )
 
-    # 2. Inspect for unmasked credentials & secret leakage in prompt
+    # 2. Health Safety Input Evaluation (Overdose, Intentional Harm, Emergency)
+    emergency_guidance: str | None = None
+    for msg in request.messages:
+        if msg.role.lower() == "user":
+            h_assessment = health_safety_engine.evaluate_input(msg.get_text_content())
+            if h_assessment.is_blocked:
+                raise HealthSafetyBlockedError(
+                    message=f"Request blocked by Health Safety: {h_assessment.reason}",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    details={
+                        "category": h_assessment.category,
+                        "emergency_guidance": h_assessment.emergency_guidance,
+                        "reason": h_assessment.reason,
+                    },
+                )
+            if h_assessment.is_emergency and h_assessment.emergency_guidance:
+                emergency_guidance = h_assessment.emergency_guidance
+
+    # 3. Inspect for unmasked credentials & secret leakage in prompt
     if security_engine.settings.security_block_on_secrets:
         for msg in request.messages:
             if msg.role.lower() == "user":
@@ -127,7 +175,7 @@ async def create_chat_completion(
                         },
                     )
 
-    # 3. Tool Authorization Check
+    # 4. Tool Authorization Check
     if request.tools:
         for tool_def in request.tools:
             name = None
@@ -149,17 +197,23 @@ async def create_chat_completion(
                         },
                     )
 
-    # 4. Optional Input PII Redaction
+    # 5. Optional Input PII Redaction
     if security_engine.settings.security_redact_pii:
         for msg in request.messages:
             if isinstance(msg.content, str):
                 redacted, _ = pii_scanner.redact(msg.content)
                 msg.content = redacted
 
-    # 5. Forward to target provider (streaming or non-streaming)
+    # 6. Forward to target provider (streaming or non-streaming)
     if request.stream:
         return StreamingResponse(
-            sse_event_stream(router_instance, request, output_guard),
+            sse_event_stream(
+                router_instance,
+                request,
+                output_guard,
+                health_safety_engine=health_safety_engine,
+                emergency_guidance=emergency_guidance,
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -170,10 +224,13 @@ async def create_chat_completion(
 
     response = await router_instance.generate(request)
 
-    # 6. Output Security Inspection & Redaction
+    # 7. Output Security Inspection & Redaction
     if response.choices and response.choices[0].message:
         raw_output = response.choices[0].message.content
         out_assessment = output_guard.inspect_and_sanitize(raw_output)
-        response.choices[0].message.content = out_assessment.sanitized_text
+        sanitized_health_text, _ = health_safety_engine.evaluate_output(out_assessment.sanitized_text)
+        if emergency_guidance and emergency_guidance not in sanitized_health_text:
+            sanitized_health_text = f"{emergency_guidance}\n\n{sanitized_health_text}"
+        response.choices[0].message.content = sanitized_health_text
 
     return response

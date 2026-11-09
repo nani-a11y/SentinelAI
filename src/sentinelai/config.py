@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     output_block_critical_leaks: bool = True
     output_detect_prompt_leakage: bool = True
 
+    # Phase 6: Health Safety Configuration
+    health_safety_enabled: bool = True
+    health_safety_block_overdose: bool = True
+    health_safety_require_disclaimer: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
