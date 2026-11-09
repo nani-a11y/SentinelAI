@@ -8,12 +8,14 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from sentinelai.api.routes.chat import router as chat_router
+from sentinelai.api.routes.dashboard import router as dashboard_router
 from sentinelai.api.routes.health import router as health_router
 from sentinelai.api.routes.security import router as security_router
 from sentinelai.config import get_settings
 from sentinelai.database import close_db_engine
 from sentinelai.exceptions import register_exception_handlers
 from sentinelai.logging import setup_logging
+from sentinelai.security.events import get_event_store
 
 logger = logging.getLogger("sentinelai.app")
 
@@ -63,6 +65,9 @@ def create_app() -> FastAPI:
         process_time_ms = round((time.monotonic() - start_time) * 1000, 2)
         response.headers["X-Process-Time-Ms"] = str(process_time_ms)
 
+        # Track request in security event store
+        get_event_store().record_request(request.method, request.url.path, response.status_code)
+
         logger.info(
             "%s %s -> %s (%sms)",
             request.method,
@@ -85,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(security_router)
+    app.include_router(dashboard_router)
 
     @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:
@@ -93,6 +99,7 @@ def create_app() -> FastAPI:
             "version": settings.app_version,
             "status": "running",
             "docs_url": "/docs",
+            "dashboard_url": "/dashboard",
         }
 
     return app

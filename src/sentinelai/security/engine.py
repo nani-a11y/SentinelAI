@@ -4,6 +4,7 @@ from typing import Sequence
 
 from sentinelai.config import Settings, get_settings
 from sentinelai.schemas.chat import ChatMessage
+from sentinelai.security.events import emit_security_event
 from sentinelai.security.models import SecurityAssessment, SecurityViolation
 from sentinelai.security.normalizer import normalize_text
 from sentinelai.security.rules import (
@@ -105,38 +106,44 @@ class SecurityEngine:
             summary=summary,
         )
 
-        # 5. Log security events safely (without raw prompt content or credentials)
+        # 5. Log and record security events safely (without raw prompt content or credentials)
         fingerprint = self._fingerprint(text)
         prompt_len = len(text)
 
+        ev_category = "prompt_injection"
+        if "JAILBREAK" in sorted_categories:
+            ev_category = "jailbreak"
+        elif "SECRET_EXFILTRATION" in sorted_categories:
+            ev_category = "secrets"
+        elif "PROMPT_INJECTION" in sorted_categories:
+            ev_category = "prompt_injection"
+
         if assessment.is_blocked:
-            logger.warning(
-                "Security violation BLOCKED: fingerprint=%s len=%d score=%.2f categories=%s violations=%d",
-                fingerprint,
-                prompt_len,
-                assessment.risk_score,
-                sorted_categories,
-                len(violations),
-                extra={
-                    "event": "security_violation_blocked",
-                    "fingerprint": fingerprint,
-                    "prompt_length": prompt_len,
-                    "risk_score": assessment.risk_score,
+            emit_security_event(
+                event_type=f"{ev_category}_blocked",
+                severity="CRITICAL" if assessment.risk_score >= 0.85 else "HIGH",
+                action="BLOCKED",
+                risk_score=assessment.risk_score,
+                raw_payload_for_fingerprint=text,
+                details={
+                    "category": ev_category,
                     "categories": sorted_categories,
-                    "obfuscations": obfuscations,
+                    "violations_count": len(violations),
+                    "summary": summary,
                 },
             )
         elif violations:
-            logger.info(
-                "Security warning ALLOWED (educational/sub-threshold): fingerprint=%s score=%.2f categories=%s",
-                fingerprint,
-                assessment.risk_score,
-                sorted_categories,
-                extra={
-                    "event": "security_warning_allowed",
-                    "fingerprint": fingerprint,
-                    "risk_score": assessment.risk_score,
+            emit_security_event(
+                event_type=f"{ev_category}_warning",
+                severity="MEDIUM" if assessment.risk_score >= 0.4 else "LOW",
+                action="ALLOWED",
+                risk_score=assessment.risk_score,
+                raw_payload_for_fingerprint=text,
+                details={
+                    "category": ev_category,
                     "categories": sorted_categories,
+                    "educational_context": is_valid_educational,
+                    "summary": summary,
                 },
             )
 
