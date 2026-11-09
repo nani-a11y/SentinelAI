@@ -8,10 +8,11 @@ class Settings(BaseSettings):
     app_name: str = "SentinelAI"
     app_version: str = "0.1.0"
     environment: str = "development"
-    debug: bool = True
+    debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
+    cors_origins: list[str] = ["*"]
 
     # PostgreSQL configuration (lightweight asyncpg connector)
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/sentinelai"
