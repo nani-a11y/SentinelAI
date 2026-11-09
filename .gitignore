@@ -35,8 +35,15 @@ ENV/
 .coverage
 htmlcov/
 
-# IDEs
+# IDEs & OS
 .idea/
 .vscode/
 *.swp
 *.swo
+.DS_Store
+
+# Databases & Logs
+*.db
+*.sqlite
+*.sqlite3
+*.log

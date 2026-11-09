@@ -770,6 +770,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     // Initialize & polling
     fetchMetricsAndEvents();
+    const urlParams = new URLSearchParams(window.location.search);
+    const demoSample = urlParams.get("demo");
+    if (demoSample && SAMPLES[demoSample]) {
+      loadSample(demoSample);
+      setTimeout(runPromptTest, 300);
+    }
     setInterval(() => {
       if (document.getElementById("autoRefreshToggle").checked) {
         fetchMetricsAndEvents();

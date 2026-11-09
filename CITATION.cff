@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use SentinelAI in your research or project, please cite it as below."
+title: "SentinelAI: Modular AI Security Reverse Proxy and Defense Gateway"
+version: 0.1.0
+date-released: 2026-11-09
+url: "https://github.com/SentinelAI/SentinelAI"
+authors:
+  - name: "SentinelAI Contributors"
+license: "MIT"
+keywords:
+  - "llm-security"
+  - "ai-security"
+  - "cybersecurity"
+  - "prompt-injection"
+  - "fastapi"
+  - "owasp"
+  - "llm-firewall"
