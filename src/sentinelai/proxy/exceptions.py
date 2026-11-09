@@ -84,3 +84,39 @@ class PromptSecurityBlockedError(LLMProxyError):
             code="prompt_security_blocked",
             details=details,
         )
+
+
+class SecretLeakDetectedError(LLMProxyError):
+    """Raised when request or payload contains unmasked credentials, API keys, or secrets."""
+
+    def __init__(
+        self,
+        message: str = "Request blocked: unmasked secrets, API keys, or credentials detected.",
+        status_code: int = status.HTTP_403_FORBIDDEN,
+        details: Any = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            error_type="security_violation",
+            code="secret_leak_detected",
+            details=details,
+        )
+
+
+class UnauthorizedToolError(LLMProxyError):
+    """Raised when client requests unauthorized or restricted tool execution."""
+
+    def __init__(
+        self,
+        message: str = "Tool call blocked: unauthorized tool or forbidden parameters.",
+        status_code: int = status.HTTP_403_FORBIDDEN,
+        details: Any = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            error_type="security_violation",
+            code="unauthorized_tool_call",
+            details=details,
+        )

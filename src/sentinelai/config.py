@@ -37,6 +37,25 @@ class Settings(BaseSettings):
     security_block_threshold: float = 0.60
     security_block_status_code: int = 403
 
+    # Phase 4: Context, Data & Tool Security Configuration
+    security_block_on_secrets: bool = True
+    security_redact_pii: bool = False
+    security_allowed_tools: list[str] = [
+        "calculator",
+        "search_docs",
+        "get_weather",
+        "read_metric",
+        "query_database",
+    ]
+    security_blocked_tools: list[str] = [
+        "execute_bash",
+        "run_command",
+        "shell_exec",
+        "eval_code",
+        "system_exec",
+        "delete_database",
+    ]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

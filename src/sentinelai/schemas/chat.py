@@ -39,6 +39,8 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
     frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
     user: str | None = None
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: Any = None
 
     def effective_max_tokens(self) -> int | None:
         """Return either max_completion_tokens or legacy max_tokens."""
